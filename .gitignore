@@ -1,0 +1,49 @@
+# Python
+# Byte-code files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment
+venv/
+.venv/
+env/
+.env/
+
+# Editor/IDE-specific files
+.vscode/  # For VS Code workspace files (optional, some prefer to share certain settings)
+.idea/    # For PyCharm/IntelliJ IDE files
+*.swp
+*~
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Logs and databases
+*.log
+*.sqlite3
+db.sqlite3
+
+# TypeScript/JavaScript
+# Compiled JavaScript and source maps
+*.js
+*.js.map
+dist/
+out/
+
+# Node package manager files
+node_modules/
+
+# TypeScript cache and config files
+.tsbuildinfo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Secrets/credentials (optional, recommended)
+.env
+api_keys.txt
