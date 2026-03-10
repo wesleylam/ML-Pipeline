@@ -47,3 +47,5 @@ Thumbs.db
 # Secrets/credentials (optional, recommended)
 .env
 api_keys.txt
+
+backend/storage
