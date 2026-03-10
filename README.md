@@ -149,3 +149,11 @@ Then add the class to `CLASS_MAP` in `backend/routers/train.py`.
 ### Add a new cleaning operation
 Add to `OP_DEFS` in `frontend/src/pages/CleanPage.tsx`.  
 Add the handler to `apply_operation()` in `backend/routers/clean.py`.
+
+## TO FIX
+- file selection "Choose file" button does not work, the surrounding area works tho
+- renamed column is not renamed in the feature columns
+    - cannot train
+- dataset select from train page
+- prediction result is always the same
+- color axis dont see to work on continuous value? (only discrete?)
