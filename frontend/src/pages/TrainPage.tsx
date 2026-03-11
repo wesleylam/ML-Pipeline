@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Dataset, TrainResult, startTraining, getJobStatus } from '../api/client'
+import { Dataset, TrainResult, startTraining, getJobStatus, getDataset } from '../api/client'
 import { Btn, Card, CardTitle, FormGroup, Select, EmptyState, LogBox, Divider } from '../components/ui'
 import { STEP_CATALOGUE, ALL_STEP_DEFS, StepDef } from '../components/catalogue'
 
@@ -150,6 +150,7 @@ const FeatureSelector: React.FC<{
 
 // ── Train Page ─────────────────────────────────────────────────────────────
 export const TrainPage: React.FC<Props> = ({ dataset, cleanedDatasetId, onResults }) => {
+  const [trainDataset, setTrainDataset] = useState<Dataset | null>(null)
   const [steps, setSteps]       = useState<PipeStepInstance[]>([])
   const [target, setTarget]     = useState('')
   const [features, setFeatures] = useState<Set<string>>(new Set())
@@ -157,29 +158,37 @@ export const TrainPage: React.FC<Props> = ({ dataset, cleanedDatasetId, onResult
   const [status, setStatus]     = useState<'idle' | 'running' | 'done' | 'failed'>('idle')
   const [log, setLog]           = useState<string[]>([])
   const pollRef                 = useRef<ReturnType<typeof setInterval> | null>(null)
+  
+  const effectiveDatasetId = cleanedDatasetId || dataset?.id;
 
-  const effectiveDatasetId = cleanedDatasetId || dataset?.id
-  const cols = dataset?.column_names || []
+  useEffect(() => {
+    const datasetIdToLoad = cleanedDatasetId || dataset?.id;
+    if (datasetIdToLoad) {
+      getDataset(datasetIdToLoad).then(setTrainDataset);
+    } else {
+      setTrainDataset(dataset); // Use the one from props if no specific one
+    }
+  }, [dataset, cleanedDatasetId]);
 
-  // Initialise target + features when columns arrive
+  const cols = trainDataset?.column_names || []
+
+  // When columns change (new dataset loaded), reset target and features
   useEffect(() => {
     if (cols.length === 0) return
-    const defaultTarget = cols[cols.length - 1]
-    setTarget(prev => prev || defaultTarget)
-    setFeatures(new Set(cols.filter(c => c !== defaultTarget)))
+    const newDefaultTarget = cols[cols.length - 1]
+    const newTarget = cols.includes(target) ? target : newDefaultTarget
+    setTarget(newTarget)
+    setFeatures(new Set(cols.filter(c => c !== newTarget)))
   }, [cols.join(',')])
 
   // When target changes, remove it from features and add old target back
   const handleTargetChange = (newTarget: string) => {
+    const oldTarget = target;
     setTarget(newTarget)
     setFeatures(prev => {
       const next = new Set(prev)
       next.delete(newTarget)
-      cols.filter(c => c !== newTarget).forEach(c => {
-        if (!next.has(c) && c === target) next.add(c) // re-add old target
-      })
-      // ensure old target is back as a selectable feature
-      if (target && target !== newTarget) next.add(target)
+      if (oldTarget && oldTarget !== newTarget) next.add(oldTarget)
       return next
     })
   }
@@ -241,7 +250,7 @@ export const TrainPage: React.FC<Props> = ({ dataset, cleanedDatasetId, onResult
       }).join(',\n')}\n])`
     : null
 
-  if (!dataset) return <EmptyState icon="🧠" title="No dataset loaded" sub="Upload a dataset first" />
+  if (!trainDataset) return <EmptyState icon="🧠" title="Loading dataset..." />
 
   return (
     <div className="fade-in">
@@ -251,7 +260,7 @@ export const TrainPage: React.FC<Props> = ({ dataset, cleanedDatasetId, onResult
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <FormGroup label="Dataset">
             <div style={{ fontFamily: 'var(--mono)', fontSize: 12, padding: '8px 10px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 6, color: cleanedDatasetId ? 'var(--accent)' : 'var(--text2)', whiteSpace: 'nowrap' }}>
-              {cleanedDatasetId ? `${cleanedDatasetId} (cleaned)` : dataset.name}
+              {cleanedDatasetId ? `${trainDataset.name} (cleaned)` : trainDataset.name}
             </div>
           </FormGroup>
           <FormGroup label="Target Column">

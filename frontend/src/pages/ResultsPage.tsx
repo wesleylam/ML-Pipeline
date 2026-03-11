@@ -17,6 +17,15 @@ const AXIS_COLORS  = { x: 'var(--accent2)', y: 'var(--accent)', color: 'var(--ac
 const tooltipStyle = { background: '#181b22', border: '1px solid #252830', borderRadius: 6, fontSize: 12 }
 const tickStyle    = { fill: '#555b6e', fontSize: 11 }
 
+function getContinuousColor(value: number, min: number, max: number, startColor = [0, 144, 255], endColor = [0, 229, 160]): string {
+  if (min >= max) return `rgb(${startColor[0]}, ${startColor[1]}, ${startColor[2]})`;
+  const ratio = (value - min) / (max - min);
+  const r = Math.round(startColor[0] + ratio * (endColor[0] - startColor[0]));
+  const g = Math.round(startColor[1] + ratio * (endColor[1] - startColor[1]));
+  const b = Math.round(startColor[2] + ratio * (endColor[2] - startColor[2]));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
 // ── Filter Bar ─────────────────────────────────────────────────────────────────
 const FilterBar: React.FC<{
   allCols: string[]
@@ -96,24 +105,26 @@ export const ResultsPage: React.FC<Props> = ({ result, jobId }) => {
   const [axisMode,  setAxisMode]  = useState<AxisMode>('x')
   const [filters,   setFilters]   = useState<FilterRule[]>([])
 
-  if (!result) return <EmptyState icon="📊" title="No results yet" sub="Train a model to explore results here" />
-
-  const { metrics, feature_importance, predictions, is_classifier, column_names } = result
+  const { metrics, feature_importance, predictions, is_classifier, column_names } = result || {
+    metrics: {}, feature_importance: [], predictions: [], is_classifier: false, column_names: []
+  }
 
   // ── All columns available in the predictions table ─────────────────────────
   const allPredCols = useMemo(() => {
+    if (!result) return []
     const base = [...(column_names || []), 'actual', 'predicted']
     if (is_classifier) base.push('probability')
     else base.push('residual')
-    return base.filter(c => predictions.length === 0 || predictions[0][c] !== undefined)
-  }, [column_names, predictions, is_classifier])
+    return base.filter(c => predictions.length === 0 || (predictions[0] && predictions[0][c] !== undefined))
+  }, [result, column_names, predictions, is_classifier])
 
   const numCols = useMemo(() =>
-    allPredCols.filter(c => predictions.length === 0 || typeof predictions[0][c] === 'number'),
-  [allPredCols, predictions])
+    allPredCols.filter(c => (predictions?.length || 0) === 0 || (predictions[0] && typeof predictions[0][c] === 'number')),
+  [result, allPredCols, predictions])
 
   // ── Apply filters ──────────────────────────────────────────────────────────
   const filteredPredictions = useMemo(() => {
+    if (!predictions) return []
     if (filters.length === 0) return predictions
     return predictions.filter(row => filters.every(f => {
       const rawVal = row[f.col]
@@ -132,7 +143,7 @@ export const ResultsPage: React.FC<Props> = ({ result, jobId }) => {
       if (f.op === '!=')  return String(rawVal) !== f.val
       return true
     }))
-  }, [predictions, filters])
+  }, [result, predictions, filters])
 
   // ── Chart data (uses filtered set) ────────────────────────────────────────
   const scatterData = filteredPredictions.slice(0, 400).map((r, i) => ({
@@ -142,6 +153,7 @@ export const ResultsPage: React.FC<Props> = ({ result, jobId }) => {
   }))
 
   const histData = useMemo(() => {
+    if (!result) return []
     const vals = filteredPredictions.map(r => r[xAxis] as number).filter(v => v != null && typeof v === 'number')
     if (vals.length === 0) return []
     const mn = Math.min(...vals), mx = Math.max(...vals), bins = 14, size = (mx - mn) / bins || 1
@@ -149,14 +161,25 @@ export const ResultsPage: React.FC<Props> = ({ result, jobId }) => {
       bin: (mn + i * size).toFixed(1),
       count: vals.filter(v => v >= mn + i * size && v < mn + (i + 1) * size).length,
     }))
-  }, [filteredPredictions, xAxis])
+  }, [result, filteredPredictions, xAxis])
+
+  const colorByStats = useMemo(() => {
+    if (!numCols.includes(colorBy)) return null;
+    const values = filteredPredictions.map(r => r[colorBy] as number).filter(v => typeof v === 'number' && isFinite(v));
+    if (values.length === 0) return null;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    return { min, max };
+  }, [filteredPredictions, colorBy, numCols]);
 
   const lineData = filteredPredictions.slice(0, 80).map((r, i) => ({
     i,
     val: r[yAxis] !== undefined ? r[yAxis] as number : null,
   }))
 
-  const cm = (metrics.confusion_matrix as number[][]) || null
+  if (!result) return <EmptyState icon="📊" title="No results yet" sub="Train a model to explore results here" />
+
+  const cm = (metrics?.confusion_matrix as number[][]) || null
 
   const hasAxes = ['scatter', 'histogram', 'line'].includes(chartType)
   const currentAxisVal = axisMode === 'x' ? xAxis : axisMode === 'y' ? yAxis : colorBy
@@ -174,7 +197,7 @@ export const ResultsPage: React.FC<Props> = ({ result, jobId }) => {
     return null
   }
 
-  const metricCards = is_classifier
+  const metricCards = !metrics || Object.keys(metrics).length === 0 ? [] : is_classifier
     ? [['Accuracy',  ((metrics.accuracy  as number) * 100).toFixed(1) + '%'],
        ['F1 Score',  (metrics.f1         as number).toFixed(3)],
        ['Precision', (metrics.precision  as number).toFixed(3)],
@@ -196,14 +219,16 @@ export const ResultsPage: React.FC<Props> = ({ result, jobId }) => {
   return (
     <div className="fade-in">
       {/* Metrics */}
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${metricCards.length}, 1fr)`, gap: 10, marginBottom: 20 }}>
-        {metricCards.map(([l, v]) => (
-          <div key={l} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '14px 16px', textAlign: 'center' }}>
-            <div style={{ fontFamily: 'var(--mono)', fontSize: 26, fontWeight: 700, color: 'var(--accent)' }}>{v}</div>
-            <div style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.1em', marginTop: 4 }}>{l}</div>
-          </div>
-        ))}
-      </div>
+      {metricCards.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${metricCards.length}, 1fr)`, gap: 10, marginBottom: 20 }}>
+          {metricCards.map(([l, v]) => (
+            <div key={l} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '14px 16px', textAlign: 'center' }}>
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 26, fontWeight: 700, color: 'var(--accent)' }}>{v}</div>
+              <div style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.1em', marginTop: 4 }}>{l}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Chart + axis panel */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 220px', gap: 16, alignItems: 'start', marginBottom: 16 }}>
@@ -253,11 +278,19 @@ export const ResultsPage: React.FC<Props> = ({ result, jobId }) => {
               <ResponsiveContainer width="100%" height="100%">
                 <ScatterChart margin={{ top: 10, right: 20, bottom: 24, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#252830" />
-                  <XAxis dataKey="x" name={xAxis} tick={tickStyle} axisLine={false} label={{ value: xAxis, fill: '#555b6e', fontSize: 11, position: 'insideBottom', offset: -10 }} />
-                  <YAxis dataKey="y" name={yAxis} tick={tickStyle} axisLine={false} label={{ value: yAxis, fill: '#555b6e', fontSize: 10, angle: -90, position: 'insideLeft' }} />
+                  <XAxis type="number" dataKey="x" name={xAxis} tick={tickStyle} axisLine={false} label={{ value: xAxis, fill: '#555b6e', fontSize: 11, position: 'insideBottom', offset: -10 }} domain={['dataMin', 'dataMax']} />
+                  <YAxis type="number" dataKey="y" name={yAxis} tick={tickStyle} axisLine={false} label={{ value: yAxis, fill: '#555b6e', fontSize: 10, angle: -90, position: 'insideLeft' }} domain={['dataMin', 'dataMax']} />
                   <Tooltip contentStyle={tooltipStyle} formatter={(v: any, n: string) => [v, n === 'x' ? xAxis : yAxis]} />
                   <Scatter data={scatterData as any[]}>
-                    {scatterData.map((d, i) => <Cell key={i} fill={Number(d.c) === 1 ? '#00e5a0' : '#0090ff'} opacity={0.75} />)}
+                    {scatterData.map((d, i) => {
+                      let fillColor = '#0090ff';
+                      if (colorByStats && typeof d.c === 'number' && isFinite(d.c)) {
+                        fillColor = getContinuousColor(d.c, colorByStats.min, colorByStats.max);
+                      } else if (d.c !== null && d.c !== undefined) {
+                        fillColor = Number(d.c) === 1 ? '#00e5a0' : '#0090ff';
+                      }
+                      return <Cell key={i} fill={fillColor} opacity={0.75} />;
+                    })}
                   </Scatter>
                 </ScatterChart>
               </ResponsiveContainer>

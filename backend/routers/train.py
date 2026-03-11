@@ -154,15 +154,6 @@ def _run_training(job_id: str, req: TrainRequest):
         if estimator_step is None:
             raise ValueError("No estimator in pipeline")
 
-        # Handle mixed types: encode object cols before fitting
-        obj_cols = X_train.select_dtypes(include="object").columns.tolist()
-        if obj_cols:
-            log(f"Label-encoding categorical columns: {obj_cols}")
-            for col in obj_cols:
-                enc = LabelEncoder()
-                X_train[col] = enc.fit_transform(X_train[col].astype(str))
-                X_test[col] = X_test[col].astype(str).map(lambda x: enc.transform([x])[0] if x in enc.classes_ else -1)
-
         pipeline = Pipeline(pre_steps + [estimator_step])
 
         log(f"Fitting pipeline ({len(pre_steps)} preprocessors + estimator)...")
@@ -204,11 +195,17 @@ def _run_training(job_id: str, req: TrainRequest):
                 key=lambda x: x["importance"], reverse=True
             )
 
-        log("Computing predictions dataframe...")
+        log("Computing and saving results...")
         # Build predictions table
         X_test_copy = X_test.copy()
-        X_test_copy["actual"] = list(y_test)
-        X_test_copy["predicted"] = list(y_pred)
+
+        # Decode target variable for results if it was encoded
+        y_test_final = le.inverse_transform(y_test) if le and is_classifier and le is not None else y_test
+        y_pred_final = le.inverse_transform(y_pred) if le and is_classifier and le is not None else y_pred
+
+        X_test_copy["actual"] = list(y_test_final)
+        X_test_copy["predicted"] = list(y_pred_final)
+
         if hasattr(estimator, "predict_proba"):
             proba = pipeline.predict_proba(X_test)
             X_test_copy["probability"] = proba[:, 1] if proba.shape[1] == 2 else proba.max(axis=1)
@@ -217,13 +214,15 @@ def _run_training(job_id: str, req: TrainRequest):
         if not is_classifier:
             X_test_copy["residual"] = X_test_copy["actual"] - X_test_copy["predicted"]
 
-        predictions = X_test_copy.head(200).where(pd.notnull(X_test_copy), None).to_dict(orient="records")
-
-        log("Saving model...")
         job_dir = os.path.join(STORAGE_MODELS, job_id)
         os.makedirs(job_dir, exist_ok=True)
+
+        # Save full predictions dataframe
+        X_test_copy.to_parquet(os.path.join(job_dir, "predictions.parquet"), index=False)
+        # Save model pipeline
         joblib.dump(pipeline, os.path.join(job_dir, "model.joblib"))
 
+        predictions_preview = X_test_copy.head(200).where(pd.notnull(X_test_copy), None).to_dict(orient="records")
         meta = {
             "job_id": job_id,
             "dataset_id": req.dataset_id,
@@ -233,7 +232,7 @@ def _run_training(job_id: str, req: TrainRequest):
             "is_classifier": is_classifier,
             "metrics": metrics,
             "feature_importance": feature_importance,
-            "predictions": predictions,
+            "predictions": predictions_preview,
             "column_names": list(X_test.columns),
         }
         with open(os.path.join(job_dir, "metadata.json"), "w") as f:
@@ -269,11 +268,22 @@ def job_status(job_id: str):
 @router.get("/{job_id}/results")
 def job_results(job_id: str):
     job = JOBS.get(job_id)
-    if not job:
-        raise HTTPException(404, "Job not found")
-    if job["status"] != "done":
-        raise HTTPException(400, f"Job is {job['status']}")
-    return job["result"]
+    if job:
+        if job["status"] == "done":
+            return job["result"]
+        else:
+            raise HTTPException(400, f"Job is {job['status']}")
+
+    # If job not in memory, try loading from disk (for completed jobs after restart)
+    meta_path = os.path.join(STORAGE_MODELS, job_id, "metadata.json")
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path) as f:
+                return json.load(f)
+        except Exception as e:
+            raise HTTPException(500, f"Failed to load result from disk: {e}")
+
+    raise HTTPException(404, "Job not found")
 
 
 @router.get("")

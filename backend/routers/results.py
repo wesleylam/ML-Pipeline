@@ -42,14 +42,16 @@ def get_result(job_id: str):
 
 @router.get("/{job_id}/export")
 def export_result(job_id: str):
-    meta = _load_meta(job_id)
-    predictions = meta.get("predictions", [])
-    df = pd.DataFrame(predictions)
+    predictions_path = os.path.join(STORAGE_MODELS, job_id, "predictions.parquet")
+    if not os.path.exists(predictions_path):
+        raise HTTPException(404, f"Predictions for job {job_id} not found.")
+
+    df = pd.read_parquet(predictions_path)
     stream = io.StringIO()
     df.to_csv(stream, index=False)
     stream.seek(0)
     return StreamingResponse(
         iter([stream.getvalue()]),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=results_{job_id}.csv"}
+        headers={"Content-Disposition": f"attachment; filename=predictions_{job_id}.csv"}
     )

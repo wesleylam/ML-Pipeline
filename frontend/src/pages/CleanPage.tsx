@@ -143,8 +143,8 @@ const VizPanel: React.FC<{ preview: any | null; cols: string[]; loading: boolean
           <ResponsiveContainer width="100%" height="100%">
             <ScatterChart margin={{ top: 5, right: 10, bottom: 22, left: -10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#252830" />
-              <XAxis dataKey="x" name={xCol} tick={tickStyle} axisLine={false} label={{ value: xCol, fill: '#555b6e', fontSize: 10, position: 'insideBottom', offset: -14 }} />
-              <YAxis dataKey="y" name={yCol} tick={tickStyle} axisLine={false} label={{ value: yCol, fill: '#555b6e', fontSize: 9, angle: -90, position: 'insideLeft' }} />
+              <XAxis type="number" dataKey="x" name={xCol} tick={tickStyle} axisLine={false} label={{ value: xCol, fill: '#555b6e', fontSize: 10, position: 'insideBottom', offset: -14 }} domain={['dataMin', 'dataMax']} />
+              <YAxis type="number" dataKey="y" name={yCol} tick={tickStyle} axisLine={false} label={{ value: yCol, fill: '#555b6e', fontSize: 9, angle: -90, position: 'insideLeft' }} domain={['dataMin', 'dataMax']} />
               <Tooltip contentStyle={tooltipStyle} formatter={(v: any, n: string) => [v, n === 'x' ? xCol : yCol]} />
               <Scatter data={scatterData as any[]} fill="#00e5a0" opacity={0.6} />
             </ScatterChart>

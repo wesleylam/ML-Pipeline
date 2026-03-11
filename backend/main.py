@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import upload, datasets, clean, train, results
+from routers import datasets, clean, train, results
 
 app = FastAPI(title="PipeLab API", version="1.0.0")
 
@@ -12,7 +12,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(upload.router,   prefix="/api/datasets", tags=["upload"])
 app.include_router(datasets.router, prefix="/api/datasets", tags=["datasets"])
 app.include_router(clean.router,    prefix="/api/datasets", tags=["clean"])
 app.include_router(train.router,    prefix="/api/train",    tags=["train"])

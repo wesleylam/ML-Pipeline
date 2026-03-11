@@ -1,5 +1,5 @@
-import os, json
-from typing import List, Any, Optional
+import os, json, uuid
+from typing import List, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import pandas as pd
@@ -26,7 +26,6 @@ class Operation(BaseModel):
 
 class CleanRequest(BaseModel):
     operations: List[Operation]
-    save_as: Optional[str] = None
 
 
 def apply_operation(df: pd.DataFrame, op: str, params: dict) -> pd.DataFrame:
@@ -124,15 +123,19 @@ def save_clean(ds_id: str, req: CleanRequest):
     for op_item in req.operations:
         df = apply_operation(df, op_item.op, op_item.params)
 
-    clean_id = req.save_as or f"{ds_id}_clean"
+    clean_id = str(uuid.uuid4())[:8]
     clean_dir = os.path.join(STORAGE_CLEAN, clean_id)
     os.makedirs(clean_dir, exist_ok=True)
     df.to_parquet(os.path.join(clean_dir, "data.parquet"), index=False)
 
     # Save ops history
     ops_data = [{"op": o.op, "params": o.params} for o in req.operations]
+    history = {
+        "source_dataset_id": ds_id,
+        "operations": ops_data
+    }
     with open(os.path.join(clean_dir, "ops_history.json"), "w") as f:
-        json.dump(ops_data, f, indent=2)
+        json.dump(history, f, indent=2)
 
     return {
         "clean_id": clean_id,

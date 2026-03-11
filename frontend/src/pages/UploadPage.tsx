@@ -77,7 +77,7 @@ export const UploadPage: React.FC<Props> = ({ onDataset }) => {
             <div style={{ fontSize: 40, marginBottom: 16 }}>📂</div>
             <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>Drop your dataset here</div>
             <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 20 }}>or click to browse — CSV, XLSX, Parquet supported</div>
-            <Btn variant="primary">Choose File</Btn>
+            <Btn variant="primary" style={{ pointerEvents: 'none' }}>Choose File</Btn>
           </>
         )}
         <input id="file-input" type="file" accept=".csv,.xlsx,.parquet" style={{ display: 'none' }} onChange={onInputChange} />
